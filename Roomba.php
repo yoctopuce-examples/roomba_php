@@ -14,161 +14,14 @@ require_once('yoctolib/yocto_serialport.php');
 class Roomba
 {
 
-    private $wheel_drop_left;
-
-    private function decodeUnsigned($data)
-    {
-        $value = 0;
-        $count = count($data);
-        for ($i = 0; $i < $count; $i++) {
-            $value <<= 8;
-            $value += $data[$i] & 0xff;
-        }
-        return $value;
-    }
-
-    private function decodeSigned($data)
-    {
-        $short = $this->decodeUnsigned($data);
-        if($short >= 32768) {
-            $short -= 65536;
-        }
-        return $short;
-    }
-
-
-    private function decodeBool($data)
-    {
-        $byte = (int)$data[0];
-        return ($byte & 1) != 0;
-    }
-
-    private function decodeBumpsAndWheelDrops($data)
-    {
-        $raw = $data[0];
-        return array("wheel_drop_left" => (($raw & 8) != 0),
-            "wheel_drop_right" => (($raw & 4) != 0),
-            "bump_left" => (($raw & 2) != 0),
-            "bump_right" => (($raw & 1) != 0));
-    }
-
-    private function decodeWheelOvercurrents($data)
-    {
-        $byte = (int)$data[0];
-        return array(
-            "leftWheel" => (($byte & 16) != 0),
-            "rightWheel" => (($byte & 8) != 0),
-            "mainbrush" => (($byte & 4) != 0),
-            "sidebrush" => (($byte & 1) != 0)
-        );
-    }
-
-    private function decodeChargingSource($data)
-    {
-        $byte = (int)$data[0];
-        return array(
-            "dock" => (($byte & 2) != 0),
-            "internal" => (($byte & 1) != 0)
-        );
-    }
-
-    private function decodeButton($data)
-    {
-        $byte = (int)$data[0];
-        return array(
-            "clock" => (($byte & 128) != 0),
-            "schedule" => (($byte & 64) != 0),
-            "day" => (($byte & 32) != 0),
-            "hour" => (($byte & 16) != 0),
-            "minute" => (($byte & 8) != 0),
-            "Dock" => (($byte & 4) != 0),
-            "spot" => (($byte & 2) != 0),
-            "clean" => (($byte & 1) != 0)
-        );
-    }
-
-
-    private function decodegroup7_26($all_data)
-    {
-        $ofs = 0;
-        $res = array();
-        for ($id = 7; $id < 26; $id++) {
-            $sensor_info = $this->decode_map[$id];
-            $size = $sensor_info['size'];
-            $ret_bytes = array_slice($all_data, $ofs, $size);
-            $res[$sensor_info['name']] = call_user_func($sensor_info['decoder'], $ret_bytes);
-            $ofs += $size;
-        }
-        return $res;
-    }
-
-
-    private function decodegroup($all_data, $from, $to)
-    {
-        $ofs = 0;
-        $res = array();
-        //print("decode group $from ->$to\n");
-        for ($id = $from; $id < $to; $id++) {
-            $sensor_info = $this->decode_map[$id];
-            $name = $sensor_info['name'];
-            //print("decode group $id ($name)\n");
-            $size = $sensor_info['size'];
-            $ret_bytes = array_slice($all_data, $ofs, $size);
-            $res[$name] = call_user_func($sensor_info['decoder'], $ret_bytes);
-            $ofs += $size;
-        }
-        return $res;
-    }
-
-
-    private function decodegroup7_16($all_data)
-    {
-        return $this->decodegroup($all_data, 7, 16);
-    }
-
-
-    private function decodegroup17_20($all_data)
-    {
-        return $this->decodegroup($all_data, 17, 20);
-    }
-
-    private function decodegroup21_26($all_data)
-    {
-        return $this->decodegroup($all_data, 21, 26);
-    }
-
-    private function decodegroup27_34($all_data)
-    {
-        return $this->decodegroup($all_data, 27, 34);
-    }
-
-    private function decodegroup35_42($all_data)
-    {
-        return $this->decodegroup($all_data, 35, 42);
-    }
-
-    private function decodegroup7_42($all_data)
-    {
-        return $this->decodegroup($all_data, 7, 42);
-    }
-
-    private function decodeIOMode($data)
-    {
-        $index = 0;
-        if(count($data) == 1) {
-            $index = $data[0];
-        }
-        return $this->modes[$index];
-    }
-
-
+    public $modes = array("Off", "Passive", "Safe", "Full");
+    private $debug_logs = array();
     /**
      * Yoctopuce Yocto-Serial interface
      * @var YSerialPort
      */
     private $serial_port;
     private $decode_map;
-    public $modes = array("Off", "Passive", "Safe", "Full");
 
     function __construct($address)
     {
@@ -177,21 +30,22 @@ class Roomba
         YAPI::DisableExceptions();
 
         // Setup the API to use the VirtualHub on local machine,
-        if(YAPI::RegisterHub($address, $errmsg) != YAPI_SUCCESS) {
+        if (YAPI::RegisterHub($address, $errmsg) != YAPI_SUCCESS) {
             die("Cannot contact $address");
         }
 
         $this->serial_port = YSerialPort::FirstSerialPort();
-        if($this->serial_port == null)
+        if ($this->serial_port == null)
             die("No module found on $address (check USB cable)");
 
+        //$this->serial_port->set_voltageLevel(Y_VOLTAGELEVEL_TTL5V);
         // setup the serial parameter with the Roomba
         // serie 600 and following communicate at 115200 bauds
-        $this->serial_port->set_serialMode("115200,8N1");
+        //$this->serial_port->set_serialMode("115200,8N1");
         // let the serial port wait 20ms between each writes
-        $this->serial_port->set_protocol("Frame:20ms");
+        //$this->serial_port->set_protocol("Frame:15ms:10ms");
         // clear all buffer of the serial port
-        $this->serial_port->reset();
+        //$this->serial_port->set_RTS(1);
 
         // initalize some internal var
         $this->decode_map = array(
@@ -259,6 +113,11 @@ class Roomba
 
     }
 
+    public function Reset()
+    {
+        $this->sendCmd(array(7));
+    }
+
     /**
      * @param array $cmd
      * @param int $nbytes
@@ -266,50 +125,41 @@ class Roomba
      */
     private function sendCmd($cmd, $nbytes = 0)
     {
+        if ($nbytes > 0) {
+            $this->serial_port->reset();
+        }
         $this->serial_port->writeArray($cmd);
-        if($nbytes > 0) {
-            YAPI::Sleep(50);
-            if(true) {
-                return $this->serial_port->readArray($nbytes);
-            } else {
-                $res = $this->serial_port->readHex($nbytes);
-                print("received $res\n");
-                $len = strlen($res) / 2;
-                $data = array();
-                for ($i = 0; $i < $len; $i++) {
-                    $data[] = dechex(substr($res, $i * 2, 2));
+        $len = sizeof($cmd);
+        $outlog = ">";
+        foreach ($cmd as $b) {
+            $outlog .= dechex($b);
+        }
+        $this->debug_logs[] = $outlog;
+        //print("$outlog\n");
+        if ($nbytes > 0) {
+            $start = microtime(true);
+            $avail = 0;
+            $timeout = microtime(true) + 2;
+            while ($avail < $nbytes && $timeout > microtime(true)) {
+                $avail = $this->serial_port->read_avail();
+                if ($avail < $nbytes) {
+                    sleep(0.01);
                 }
-                return $data;
             }
+            $stop = microtime(true);
+            $res = $this->serial_port->readArray($nbytes);
+            $inlog = "<";
+            foreach ($res as $b) {
+                $inlog .= dechex($b >> 8);
+                $inlog .= dechex($b & 0xf);
+            }
+            $inlog .= sprintf(" in %fs", ($stop - $start));
+            $this->debug_logs[] = $inlog;
+            //print("$inlog\n");
+            return $res;
         } else {
             return array();
         }
-    }
-
-
-    public function StartOI()
-    {
-        $this->sendCmd(array(128));
-    }
-
-    public function Reset()
-    {
-        $this->sendCmd(array(7));
-    }
-
-    public function StopOI()
-    {
-        $this->sendCmd(array(173));
-    }
-
-    public function Safe()
-    {
-        $this->sendCmd(array(131));
-    }
-
-    public function Full()
-    {
-        $this->sendCmd(array(132));
     }
 
     public function SetMode($mode)
@@ -331,11 +181,30 @@ class Roomba
         }
     }
 
+    public function StopOI()
+    {
+        $this->sendCmd(array(173));
+    }
+
+    public function StartOI()
+    {
+        $this->sendCmd(array(128));
+    }
+
+    public function Safe()
+    {
+        $this->sendCmd(array(131));
+    }
+
+    public function Full()
+    {
+        $this->sendCmd(array(132));
+    }
+
     public function Power()
     {
         $this->sendCmd(array(133));
     }
-
 
     public function Spot()
     {
@@ -358,13 +227,13 @@ class Roomba
      */
     public function Drive($velocity, $radius)
     {
-        if($velocity > 500)
+        if ($velocity > 500)
             $velocity = 500;
-        if($velocity < -500)
+        if ($velocity < -500)
             $velocity = -500;
-        if($radius > 2000)
+        if ($radius > 2000)
             $radius = 2000;
-        if($radius < -2000)
+        if ($radius < -2000)
             $radius = -2000;
         $cmd = array(137);
         $cmd[] = ((int)$velocity) >> 8;
@@ -382,11 +251,11 @@ class Roomba
     public function Motors($main_brush, $vacum, $side_brush)
     {
         $flags = 0;
-        if($main_brush)
+        if ($main_brush)
             $flags |= 4;
-        if($vacum)
+        if ($vacum)
             $flags |= 2;
-        if($side_brush)
+        if ($side_brush)
             $flags |= 1;
         $this->sendCmd(array(138, $flags));
     }
@@ -403,13 +272,13 @@ class Roomba
     {
         $cmd = array(139);
         $flags = 0;
-        if($debris_led)
+        if ($debris_led)
             $flags += 1;
-        if($spot_led)
+        if ($spot_led)
             $flags += 2;
-        if($dock_led)
+        if ($dock_led)
             $flags += 4;
-        if($check_led)
+        if ($check_led)
             $flags += 8;
         $cmd[] = $flags;
         $cmd[] = $power_color & 0xff;
@@ -422,7 +291,7 @@ class Roomba
         $cmd = array(140);
         $cmd[] = $songno;
         $len = sizeof($notes);
-        if($len > 16) {
+        if ($len > 16) {
             $len = 16;
         }
         $cmd[] = $len;
@@ -437,7 +306,6 @@ class Roomba
     {
         $this->sendCmd(array(141, $songno));
     }
-
 
     public function LedASCII($str)
     {
@@ -475,8 +343,15 @@ class Roomba
         return $this->sendCmd($cmd, 0);
     }
 
+    public function get_debuglog()
+    {
+        return $this->debug_logs;
+    }
 
-    //input command
+    public function getSensorGroup0()
+    {
+        return $this->Sensor(0);
+    }
 
     private function Sensor($id)
     {
@@ -484,33 +359,6 @@ class Roomba
         $sensor_info = $this->decode_map[$id];
         $ret_bytes = $this->sendCmd(array(142, $id), $sensor_info['size']);
         return call_user_func($sensor_info['decoder'], $ret_bytes);
-    }
-
-
-    private function decodeChargingState($data)
-    {
-        switch ($data[0]) {
-            case 0:
-                return "Not charging";
-            case 1:
-                return "Reconditioning charging";
-            case 2:
-                return "Full charging";
-            case 3:
-                return "Trickle charging";
-            case 4:
-                return "Waiting";
-            case 5:
-                return "Charging fault Condition";
-            default:
-                return "invalid";
-        }
-    }
-
-
-    public function getSensorGroup0()
-    {
-        return $this->Sensor(0);
     }
 
     public function getSensorGroup1()
@@ -578,6 +426,9 @@ class Roomba
         return $this->Sensor(13);
     }
 
+
+    //input command
+
     public function getWheelOvercurent()
     {
         return $this->Sensor(14);
@@ -607,7 +458,6 @@ class Roomba
     {
         return $this->Sensor(20);
     }
-
 
     public function getChargingState()
     {
@@ -668,7 +518,6 @@ class Roomba
     {
         return $this->Sensor(34);
     }
-
 
     public function getOIMode()
     {
@@ -788,6 +637,170 @@ class Roomba
     public function isStasis()
     {
         return $this->Sensor(58);
+    }
+
+    private function decodeSigned($data)
+    {
+        $short = $this->decodeUnsigned($data);
+        if ($short >= 32768) {
+            $short -= 65536;
+        }
+        return $short;
+    }
+
+    private function decodeUnsigned($data)
+    {
+        $value = 0;
+        $count = count($data);
+        for ($i = 0; $i < $count; $i++) {
+            $value <<= 8;
+            $value += $data[$i] & 0xff;
+        }
+        return $value;
+    }
+
+    private function decodeBool($data)
+    {
+        $byte = (int)$data[0];
+        return ($byte & 1) != 0;
+    }
+
+    private function decodeBumpsAndWheelDrops($data)
+    {
+        $raw = $data[0];
+        return array("wheel_drop_left" => (($raw & 8) != 0),
+            "wheel_drop_right" => (($raw & 4) != 0),
+            "bump_left" => (($raw & 2) != 0),
+            "bump_right" => (($raw & 1) != 0));
+    }
+
+    private function decodeWheelOvercurrents($data)
+    {
+        $byte = (int)$data[0];
+        return array(
+            "leftWheel" => (($byte & 16) != 0),
+            "rightWheel" => (($byte & 8) != 0),
+            "mainbrush" => (($byte & 4) != 0),
+            "sidebrush" => (($byte & 1) != 0)
+        );
+    }
+
+    private function decodeChargingSource($data)
+    {
+        $byte = (int)$data[0];
+        return array(
+            "dock" => (($byte & 2) != 0),
+            "internal" => (($byte & 1) != 0)
+        );
+    }
+
+    private function decodeButton($data)
+    {
+        $byte = (int)$data[0];
+        return array(
+            "clock" => (($byte & 128) != 0),
+            "schedule" => (($byte & 64) != 0),
+            "day" => (($byte & 32) != 0),
+            "hour" => (($byte & 16) != 0),
+            "minute" => (($byte & 8) != 0),
+            "Dock" => (($byte & 4) != 0),
+            "spot" => (($byte & 2) != 0),
+            "clean" => (($byte & 1) != 0)
+        );
+    }
+
+    private function decodegroup7_26($all_data)
+    {
+        $ofs = 0;
+        $res = array();
+        for ($id = 7; $id < 26; $id++) {
+            $sensor_info = $this->decode_map[$id];
+            $size = $sensor_info['size'];
+            $ret_bytes = array_slice($all_data, $ofs, $size);
+            $res[$sensor_info['name']] = call_user_func($sensor_info['decoder'], $ret_bytes);
+            $ofs += $size;
+        }
+        return $res;
+    }
+
+    private function decodegroup7_16($all_data)
+    {
+        return $this->decodegroup($all_data, 7, 16);
+    }
+
+    private function decodegroup($all_data, $from, $to)
+    {
+        $ofs = 0;
+        $res = array();
+        //print("decode group $from ->$to\n");
+        for ($id = $from; $id < $to; $id++) {
+            $sensor_info = $this->decode_map[$id];
+            $name = $sensor_info['name'];
+            //print("decode group $id ($name)\n");
+            $size = $sensor_info['size'];
+            $ret_bytes = array_slice($all_data, $ofs, $size);
+            $res[$name] = call_user_func($sensor_info['decoder'], $ret_bytes);
+            $ofs += $size;
+        }
+        return $res;
+    }
+
+    private function decodegroup17_20($all_data)
+    {
+        return $this->decodegroup($all_data, 17, 20);
+    }
+
+    private function decodegroup21_26($all_data)
+    {
+        return $this->decodegroup($all_data, 21, 26);
+    }
+
+    private function decodegroup27_34($all_data)
+    {
+        return $this->decodegroup($all_data, 27, 34);
+    }
+
+    private function decodegroup35_42($all_data)
+    {
+        return $this->decodegroup($all_data, 35, 42);
+    }
+
+    private function decodegroup7_42($all_data)
+    {
+        return $this->decodegroup($all_data, 7, 42);
+    }
+
+    private function decodeIOMode($data)
+    {
+        $index = 0;
+        if (count($data) == 1) {
+            $index = $data[0];
+        }
+        if ($index > 3) {
+
+            $index = 0;
+        }
+        return $this->modes[$index];
+    }
+
+    private function decodeChargingState($data)
+    {
+        switch ($data[0]) {
+            case 0:
+                return "Not charging";
+            case 1:
+                return "Reconditioning charging";
+            case 2:
+                return "Full charging";
+            case 3:
+                return "Trickle charging";
+            case 4:
+                return "Waiting";
+            case 5:
+                return "Charging fault Condition";
+            default:
+                return "invalid";
+        }
     }
 
 
