@@ -6,7 +6,7 @@ We coded a small web application in PHP, enabling us to control the Roomba. This
 
 <img  src="http://www.yoctopuce.com/pubarchive/2015-03/network_config_1.png" align="center" border="no" alt="It's the PHP script which communicates with the Roomba">
 
-##Connections
+## Connections
 The OI (Open Interface) port uses a 7 pin Mini-Din socket. Through this socket you have:
 * ground
 * 14V power supply
@@ -29,7 +29,8 @@ The first three connections are enough to establish communications between the Y
 
 We still have to connect the Yocto-Serial to the YoctoHub-Wireless-G and to power the hub. You must <b>ABSOLUTELY NOT</b> directly connect the 14V output from the Roomba to the YoctoHub: All our modules work in 5V. We must therefore reduce the voltage with a regulator. We used a <a href="https://www.pololu.com/product/2843"> D24V5F5 regulator from Pololu</a> which can use any voltage between 5 and 36 volts to provide a maximum of 500 milliamps at 5V. This regulator is very easy to connect as it works in common ground. You simply connect the 14V on <tt>VIN</tt>  and the YoctoHub on <tt>VOUT</tt>. The <tt>SHDN</tt> signal is left floating as it is not used in our case.
 
-##Communication tests
+## Communication tests
+
 For the Yocto-Serial to communicate with the Roomba, you must configure the Yocto-Serial so that it works from 0 to 5V and at the correct speed. If you connect yourself to the YoctoHub-Wireless-G web interface, you can access the configuration panel of the  Yocto-Serial and change its parameters. By default, the Roomba communicates at 115200 bauds with a stop bit and no parity bit (beware, some sites talk about 57600 bauds, but it's for older models). You can configure the Yocto-Serial in "Frame-based binary" mode with a 15ms time interval. This mode automatically separates binary frames depending on their direction and a time interval. It's not absolutely necessary, but it allows you to correctly display the traffic in the Yocto-Serial interface.
 
 <img src="http://www.yoctopuce.com/pubarchive/2015-03/yocto_serial_config_1.png" align="center" border="no" alt="The Yocto-Serial must work at 5V and 115200 baud with a stop bit and not parity bit">
@@ -46,7 +47,7 @@ Note: When the Roomba is sleeping, the OI interface is disabled and commands are
 <img src="http://www.yoctopuce.com/pubarchive/2015-03/roomba_wifi_1.jpg" srcbig="roomba_wifi_big_1.jpg" align="center" alt="The Yocto-Wireless-G and Yocto-Serial connected to the Roomba">
 
 
-##Driving the Roomba from PHP
+## Driving the Roomba from PHP
 
 We wrote a "Roomba" PHP class formatting the commands to be sent and decoding the bytes of the received answers. This call implements a method for each command that you can send to the Roomba (Clean, Drive, Dock, ...) and a method to read each sensor of the Roomba (charge status, bumper, ...)
 
